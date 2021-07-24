@@ -3,60 +3,76 @@
 __all__ = ['save_notebook_history']
 
 # Cell
-import sys, os
-
-from nbformat import write
-from nbformat.v4 import output_from_msg, new_code_cell, new_notebook
-from IPython.core.getipython import get_ipython
+import os
+import sys
 from collections import defaultdict
+
+from IPython.core.getipython import get_ipython
+from nbformat import write
+from nbformat.v4 import new_code_cell, new_notebook, output_from_msg
 
 # Internal Cell
 class NotebookHistory:
-
     def __init__(self):
         self.outputs = defaultdict(list)
         self.transient_display = {}
         self.shell = get_ipython()
 
         self.orig_send = sys.stdout.session.send
+
         def send(*args, **kwargs):
             msg = self.orig_send(*args, **kwargs)
             self._save_msg(msg)
             return msg
+
         sys.stdout.session.send = send
 
     def _save_msg(self, msg):
-        msg_type = msg['header']['msg_type']
-        if msg_type in ['execute_result', 'stream', 'display_data', 'error']:
+        msg_type = msg["header"]["msg_type"]
+        if msg_type in ["execute_result", "stream", "display_data", "error"]:
             self.outputs[self.shell.execution_count].append(msg)
-            if msg_type == 'display_data' and 'display_id' in msg['content']['transient']:
-                display_id = msg['content']['transient']['display_id']
+            if (
+                msg_type == "display_data"
+                and "display_id" in msg["content"]["transient"]
+            ):
+                display_id = msg["content"]["transient"]["display_id"]
                 self.transient_display[display_id] = msg
-        if msg_type == 'update_display_data' and 'display_id' in msg['content']['transient']:
-            display_id = msg['content']['transient']['display_id']
-            self.transient_display[display_id]['content'] = msg['content']
+        if (
+            msg_type == "update_display_data"
+            and "display_id" in msg["content"]["transient"]
+        ):
+            display_id = msg["content"]["transient"]["display_id"]
+            self.transient_display[display_id]["content"] = msg["content"]
 
     def __del__(self):
         sys.stdout.session.send = self.orig_send
 
     def _cell(self, _, execution_count, exc):
-        outputs=[output_from_msg(msg) for msg in self.outputs[execution_count]]
-        return new_code_cell(execution_count=execution_count, source=exc[0], outputs=outputs)
+        outputs = [output_from_msg(msg) for msg in self.outputs[execution_count]]
+        return new_code_cell(
+            execution_count=execution_count, source=exc[0], outputs=outputs
+        )
 
     def save_history(self, path):
         sys.stdout.flush()
         sys.stderr.flush()
 
-        cells = [self._cell(*args) for args in self.shell.history_manager.get_range(output=True)]
+        cells = [
+            self._cell(*args)
+            for args in self.shell.history_manager.get_range(output=True)
+        ]
         nb = new_notebook(cells=cells)
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, 'w', encoding='utf-8') as f:
+        with open(path, "w", encoding="utf-8") as f:
             write(nb, f, version=4)
 
-if '_NOTEBOOK_HISTORY' not in globals(): _NOTEBOOK_HISTORY = NotebookHistory()
+
+if "_NOTEBOOK_HISTORY" not in globals():
+    _NOTEBOOK_HISTORY = NotebookHistory()
 
 # Cell
 def save_notebook_history(path, verbose=True):
     """ Save current notebook history to `path` """
     _NOTEBOOK_HISTORY.save_history(path)
-    if verbose: print(f'Notebook history saved to {path}')
+    if verbose:
+        print(f"Notebook history saved to {path}")
